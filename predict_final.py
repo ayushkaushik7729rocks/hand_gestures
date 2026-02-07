@@ -39,13 +39,13 @@ options = vision.HandLandmarkerOptions(
 detector = vision.HandLandmarker.create_from_options(options)
 
 # -----------------------------
-# Parameters (TUNED)
+# Parameters
 # -----------------------------
 BUFFER_SIZE = 10
-STABLE_FRAMES = 5        # relaxed
-ENTER_CONF = 0.90        # nice → enter
-EXIT_CONF = 0.85         # fist → exit
-PROGRAM_TIMEOUT = 30     # seconds
+STABLE_FRAMES = 5
+ENTER_CONF = 0.90
+EXIT_CONF = 0.35
+PROGRAM_TIMEOUT = 30
 
 gesture_buffer = deque(maxlen=BUFFER_SIZE)
 
@@ -55,6 +55,7 @@ gesture_buffer = deque(maxlen=BUFFER_SIZE)
 mode = "NORMAL"
 last_activity_time = time.time()
 last_executed = None
+latched_command = "IDLE"
 
 cap = cv2.VideoCapture(0)
 
@@ -77,7 +78,6 @@ while True:
 
     gesture = "NO HAND"
     confidence = 0.0
-    command = "WAITING"
     stable = False
 
     if result.hand_landmarks:
@@ -114,11 +114,13 @@ while True:
 
             # ---------------- NORMAL MODE ----------------
             if mode == "NORMAL":
+                latched_command = "IDLE"
+
                 if gesture == "showdance/nice" and stable and confidence >= ENTER_CONF:
                     mode = "PROGRAM"
                     last_activity_time = now
                     last_executed = None
-                    command = "ENTER PROGRAM MODE"
+                    latched_command = "PROGRAM ACTIVE"
 
             # ---------------- PROGRAM MODE ----------------
             elif mode == "PROGRAM":
@@ -126,32 +128,32 @@ while True:
                 # Auto timeout
                 if now - last_activity_time > PROGRAM_TIMEOUT:
                     mode = "NORMAL"
-                    command = "AUTO EXIT (TIMEOUT)"
+                    latched_command = "AUTO EXIT (TIMEOUT)"
 
                 elif gesture == "left/fist" and stable and confidence >= EXIT_CONF:
                     mode = "NORMAL"
-                    command = "EXIT PROGRAM MODE"
+                    latched_command = "EXIT PROGRAM MODE"
 
                 elif stable:
                     last_activity_time = now
 
                     if gesture == "up/one" and last_executed != "ROTATE":
-                        command = "ROTATE IN POSITION"
+                        latched_command = "ROTATE IN POSITION"
                         last_executed = "ROTATE"
 
                     elif gesture == "down/two" and last_executed != "STABLE":
-                        command = "STABILIZE / HOVER"
+                        latched_command = "STABILIZE / HOVER"
                         last_executed = "STABLE"
 
                     elif gesture == "front/three" and last_executed != "LAND":
-                        command = "LAND ON X"
+                        latched_command = "LAND ON X"
                         last_executed = "LAND"
 
         # Draw FOLLOWING rectangle
         cv2.rectangle(frame, (x1,y1), (x2,y2), (255,0,0), 2)
 
     # -----------------------------
-    # UI Overlay (DEBUG + STATUS)
+    # UI Overlay
     # -----------------------------
     cv2.putText(frame, f"MODE: {mode}",
                 (30,40), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0,255,0), 2)
@@ -165,18 +167,15 @@ while True:
     cv2.putText(frame, f"Stable: {stable}",
                 (30,135), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255,255,0), 2)
 
-    cv2.putText(frame, f"Buffer Count: {gesture_buffer.count(gesture)}",
-                (30,165), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255,255,0), 2)
-
-    cv2.putText(frame, f"Command: {command}",
-                (30,195), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0,255,255), 2)
+    cv2.putText(frame, f"Command: {latched_command}",
+                (30,170), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0,255,255), 2)
 
     if mode == "PROGRAM":
         remaining = int(PROGRAM_TIMEOUT - (time.time() - last_activity_time))
         cv2.putText(frame, f"Program Timeout: {remaining}s",
-                    (30,225), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0,0,255), 2)
+                    (30,205), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0,0,255), 2)
 
-    cv2.imshow("Gesture Program Control (FIXED)", frame)
+    cv2.imshow("Gesture Program Control (LATCHED)", frame)
 
     if cv2.waitKey(1) == 27:
         break
